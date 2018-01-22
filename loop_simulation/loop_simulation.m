@@ -19,14 +19,17 @@ act = zeros(max_n, 1);
 tar_pos = zeros(max_n, 1) + 10;
 tar_vel = zeros(max_n, 1) + 0;
 tar_acc = zeros(max_n, 1) + 0;
-tar_ang = zeros(max_n, 1) + 0;
+tar_ang = zeros(max_n, 1) + 0.5;
 tar_ang_vel = zeros(max_n, 1) + 0;
 tar_ang_acc = zeros(max_n, 1) + 0;
+
+sim_act = zeros(max_n, 1);
 
 %% Model
 
 act_to_acc_iir_index = 0.06;
 act_to_acc_delay_n = 20;
+act_to_acc_sim_iir_index = 0.04;
 
 %% Loop
 
@@ -38,15 +41,17 @@ for i = 1000 : max_n
 	vel(i) = vel(i - 1) + acc(i) * dt_s;
 	pos(i) = pos(i - 1) + vel(i) * dt_s;
 	
-	tar_vel(i) = abs_constrain((tar_pos(i) - pos(i)) * 2, 5);
-	tar_acc(i) = abs_constrain((tar_vel(i) - vel(i)) * 5, 5);
-	tar_ang(i) = atan(tar_acc(i) / GRAVITY);
-	tar_ang_vel(i) = abs_constrain((tar_ang(i) - ang(i)) * 5, 5);
+% 	tar_vel(i) = abs_constrain((tar_pos(i) - pos(i)) * 2, 5);
+% 	tar_acc(i) = abs_constrain((tar_vel(i) - vel(i)) * 5, 5);
+% 	tar_ang(i) = atan(tar_acc(i) / GRAVITY);
+	tar_ang_vel(i) = abs_constrain(control_curve(tar_ang(i) - ang(i)) * 5, 5);
 	tar_ang_acc(i) = abs_constrain((tar_ang_vel(i) - ang_vel(i)) * 12, 100);
-	act(i) = tar_ang_acc(i);
+    act(i) = tar_ang_acc(i);
+%     act(i) = (1.5 * tar_ang_acc(i) - sim_act(i - 1)) * 2;
+%     sim_act(i) = act(i) * act_to_acc_sim_iir_index + sim_act(i - 1) * (1 - act_to_acc_sim_iir_index);
 end;
 
-figure(1);
+figure(3);
 ax(1) = subplot(3, 2, 1); plot(t, [tar_pos, pos]); grid on; legend('tar pos', 'pos');
 ax(2) = subplot(3, 2, 3); plot(t, [tar_vel, vel]); grid on; legend('tar vel', 'vel');
 ax(3) = subplot(3, 2, 5); plot(t, [tar_acc, acc]); grid on; legend('tar acc', 'acc');
