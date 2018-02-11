@@ -13,15 +13,25 @@ for i = 1 : n
 end;
 
 for i = N + 2 : n
-    du = u(i - 1 : -1 : i - N, :) - u(i - 2 : -1 : i - N - 1, :);
-    dy = y(i) - u(i - N - 1);
-	H = [du; 1];
-    K = P * H / (H' * P * H + lambda);
-	dx = K * (dy - (du' * m(i - 1, :)' + b(i - 1)));
-    m(i, :) = m(i - 1, :) + dx(1 : N)';
-	b(i) = b(i - 1) + dx(N + 1);
-    P = P - K * H' * P;
-    P = P / lambda;
+    du = u(i - 1 : -1 : i - N) - u(i - 2 : -1 : i - N - 1);
+    [rm, b(i), P] = model_identification_iteration( ...
+        y(i), ...
+        u(i - N - 1), ...
+        du, ...
+        m(i - 1, :)', ...
+        b(i - 1), ...
+        P, ...
+        N, ...
+        lambda);
+    m(i, :) = rm';
+%     dy = y(i) - u(i - N - 1);
+% 	H = [du; 1];
+%     K = P * H / (H' * P * H + lambda);
+% 	dx = K * (dy - (du' * m(i - 1, :)' + b(i - 1)));
+%     m(i, :) = m(i - 1, :) + dx(1 : N)';
+% 	b(i) = b(i - 1) + dx(N + 1);
+%     P = P - K * H' * P;
+%     P = P / lambda;
 end
 
 end
