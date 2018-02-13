@@ -9,25 +9,8 @@ t = (1 : max_n)' * dt_s;
 
 GRAVITY = 9.81;
 
-pos = zeros(max_n, 1);
-vel = zeros(max_n, 1);
-acc = zeros(max_n, 1);
-ang = zeros(max_n, 1);
-ang_vel = zeros(max_n, 1);
-ang_acc = zeros(max_n, 1);
-act = zeros(max_n, 1);
-
-tar_pos = ((sin(t) > 0) * 1 - 0.5) * 2;
-tar_vel = zeros(max_n, 1) + 0;
-tar_acc = zeros(max_n, 1) + 0;
-% tar_ang = zeros(max_n, 1) + 0;
-% tar_ang = ((sin(t) > 0) * 1 - 0.5) * 0.5;
-tar_ang = ((mod((0 : max_n - 1)', 9000) < 3000) - 0.5) * 0.2;
-% tar_ang = LPF_ave(tar_ang, 800);
-% tar_ang = LPF_ave(tar_ang, 100);
-tar_ang = (t < 30) .* tar_ang + (t >= 30) .* cos(t - 30) * 0.1;
-tar_ang_vel = zeros(max_n, 1) + 0;
-tar_ang_acc = zeros(max_n, 1) + 0;
+declare_state;
+set_target;
 
 sim_act = zeros(max_n, 1);
 
@@ -53,10 +36,10 @@ ang_b = 0;
 ang_m_hist = zeros(0, ang_N);
 
 %% MPC
-ang_M = 10;
+ang_M = 30;
 ang_Q = diag([ones(20, 1) * 0; ones(30, 1)]);
-% ang_R = diag([ones(1, 1)]) * 0;
-ang_R = eye(ang_M) * 1;
+% ang_R = diag([0.01, ones(1, ang_M - 1)]) * 1;
+ang_R = eye(ang_M) * 0.01;
 ang_predict = zeros(max_n, 1);
 ang_cmd = zeros(max_n, 1);
 
@@ -125,9 +108,9 @@ for i = ang_step * (ang_N + 1) + 1 : max_n - ang_N * ang_step
 % 	tar_ang(i) = atan(tar_acc(i) / GRAVITY);
 % 	tar_ang_vel(i) = abs_constrain((tar_ang(i) - ang(i) - noise_ang(i)) * 8, 5);
 	tar_ang_acc(i) = abs_constrain((tar_ang_vel(i) - res_ang_vel) * 12, 100);
-    act(i) = tar_ang_acc(i);
-%     act(i) = (1.5 * tar_ang_acc(i) - sim_act(i - 1)) * 2;
-%     sim_act(i) = act(i) * act_to_acc_sim_iir_index + sim_act(i - 1) * (1 - act_to_acc_sim_iir_index);
+%     act(i) = tar_ang_acc(i);
+    act(i) = (1.5 * tar_ang_acc(i) - sim_act(i - 1)) * 2;
+    sim_act(i) = act(i) * act_to_acc_sim_iir_index + sim_act(i - 1) * (1 - act_to_acc_sim_iir_index);
 end;
 
 max_n = max_n - ang_N * ang_step;
@@ -153,14 +136,14 @@ ang_cmd = ang_cmd(1 : max_n);
 ang_predict = ang_predict(1 : max_n);
 
 figure(1);
-% ax(1) = subplot(3, 2, 1); plot(t, [tar_pos, pos]); grid on; legend('tar pos', 'pos');
-% ax(2) = subplot(3, 2, 3); plot(t, [tar_vel, vel]); grid on; legend('tar vel', 'vel');
-% ax(3) = subplot(3, 2, 5); plot(t, [tar_acc, acc]); grid on; legend('tar acc', 'acc');
-ax(4) = subplot(1, 1, 1); plot(t, [tar_ang, ang, ang_cmd]); grid on; legend('tar ang', 'ang');
-% ax(5) = subplot(3, 2, 4); plot(t, [tar_ang_vel, ang_vel]); grid on; legend('tar ang vel', 'ang vel');
-% ax(6) = subplot(3, 2, 6); plot(t, [tar_ang_acc, ang_acc]); grid on; legend('tar ang acc', 'ang acc');
+ax(1) = subplot(3, 2, 1); plot(t, [tar_pos, pos]); grid on; legend('tar pos', 'pos');
+ax(2) = subplot(3, 2, 3); plot(t, [tar_vel, vel]); grid on; legend('tar vel', 'vel');
+ax(3) = subplot(3, 2, 5); plot(t, [tar_acc, acc]); grid on; legend('tar acc', 'acc');
+ax(4) = subplot(3, 2, 2); plot(t, [tar_ang, ang, ang_cmd]); grid on; legend('tar ang', 'ang', 'ang cmd');
+ax(5) = subplot(3, 2, 4); plot(t, [tar_ang_vel, ang_vel]); grid on; legend('tar ang vel', 'ang vel');
+ax(6) = subplot(3, 2, 6); plot(t, [tar_ang_acc, ang_acc]); grid on; legend('tar ang acc', 'ang acc');
 
-% linkaxes(ax, 'x');
+linkaxes(ax, 'x');
 
 figure(2);
 % step = ang_step;
