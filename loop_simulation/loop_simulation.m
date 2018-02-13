@@ -9,6 +9,7 @@ t = (1 : max_n)' * dt_s;
 
 GRAVITY = 9.81;
 
+settings;
 declare_state;
 set_target;
 
@@ -36,10 +37,17 @@ ang_b = 0;
 ang_m_hist = zeros(0, ang_N);
 
 %% MPC
+tick_mpc1 = 10000;
+tick_mpc2 = 30000;
+
 ang_M = 30;
 ang_Q = diag([ones(20, 1) * 0; ones(30, 1)]);
+ang_M2 = 30;
+ang_Q2 = diag([ones(8, 1) * 0; ones(42, 1)]);
+% ang_Q2 = diag([ones(5, 1) * 0; (1 : 5)' / 5; ones(40, 1)]);
 % ang_R = diag([0.01, ones(1, ang_M - 1)]) * 1;
-ang_R = eye(ang_M) * 0.01;
+ang_R = eye(ang_M) * 0.1;
+ang_R2 = eye(ang_M2) * 0.1;
 ang_predict = zeros(max_n, 1);
 ang_cmd = zeros(max_n, 1);
 
@@ -55,6 +63,11 @@ for i = ang_step * (ang_N + 1) + 1 : max_n - ang_N * ang_step
     
     res_ang_vel = res_ang_vel * 0.9 + (ang_vel(i) + noise_ang_vel(i)) * 0.1;
 	
+% 	tar_vel(i) = abs_constrain((tar_pos(i) - pos(i)) * 2, 5);
+% 	tar_acc(i) = abs_constrain((tar_vel(i) - vel(i)) * 5, 5);
+% 	tar_ang(i) = atan(tar_acc(i) / GRAVITY);
+% 	tar_ang_vel(i) = abs_constrain((tar_ang(i) - ang(i) - noise_ang(i)) * 8, 5);
+
     if mod(i, ang_step) == 1
         pas_index = i - (1 : ang_N) * ang_step;
         du = ang_cmd(pas_index) - ang_cmd(pas_index - ang_step);
@@ -73,40 +86,54 @@ for i = ang_step * (ang_N + 1) + 1 : max_n - ang_N * ang_step
         for j = 1 : ang_N
             OA(j, 1 : j) = ang_m(j : -1 : 1);
         end;
-        A = OA(1 : ang_N, 1 : ang_M);
-        xxx = A' * ang_Q;
-        xxx = (xxx * A + ang_R) \ xxx;
+		if i < tick_mpc2
+			A = OA(1 : ang_N, 1 : ang_M);
+			xxx = A' * ang_Q;
+			xxx = (xxx * A + ang_R) \ xxx;
+		else
+			A = OA(1 : ang_N, 1 : ang_M2);
+			xxx = A' * ang_Q2;
+			xxx = (xxx * A + ang_R2) \ xxx;
+		end
         
         pre_index = (0 : ang_N - 1) * ang_step + i;
         ang_predict(pre_index(end)) = ang_predict(pre_index(end - 1));
         ang_predict(pre_index) = ang_predict(pre_index) + du(1) * ang_m;
         ang_predict(pre_index) = ang_predict(pre_index) + ang(i) - ang_predict(i);
         
-        if i > 300000
+        if i > 280000
             du_p = xxx * (tar_ang(pre_index) - ang_predict(pre_index));
         else
             du_p = xxx * (tar_ang(i) * ones(ang_N, 1) - ang_predict(pre_index));
         end
         
-        if i > 10000
-            ang_cmd(i) = ang_cmd(i - ang_step) + du_p(1);
+        if i > tick_mpc1
+			if set_ang_ctrl_smooth
+				ang_cmd(i) = ang_cmd(i - 1) + du_p(1) / ang_step;
+			else
+				ang_cmd(i) = ang_cmd(i - ang_step) + du_p(1);
+			end
         else
             ang_cmd(i) = tar_ang(i);
         end
         
         tar_ang_vel(i) = abs_constrain((ang_cmd(i) - ang(i) - noise_ang(i)) * 5, 5);
-        
     else
-        ang_cmd(i) = ang_cmd(i - 1);
-        tar_ang_vel(i) = tar_ang_vel(i - 1);
+        if i > tick_mpc1 && set_ang_ctrl_smooth
+			temp = mod(i, ang_step);
+			if temp == 0
+				temp = ang_step;
+			end
+			ang_cmd(i) = ang_cmd(i - temp) + du_p(1) * temp / ang_step;
+			tar_ang_vel(i) = abs_constrain((ang_cmd(i) - ang(i) - noise_ang(i)) * 5, 5);
+		else
+			ang_cmd(i) = ang_cmd(i - 1);
+			tar_ang_vel(i) = tar_ang_vel(i - 1);
+		end
         pre_index = (0 : ang_N - 1) * ang_step + i;
         ang_predict(pre_index) = ang_predict(pre_index - 1);
     end;
     
-% 	tar_vel(i) = abs_constrain((tar_pos(i) - pos(i)) * 2, 5);
-% 	tar_acc(i) = abs_constrain((tar_vel(i) - vel(i)) * 5, 5);
-% 	tar_ang(i) = atan(tar_acc(i) / GRAVITY);
-% 	tar_ang_vel(i) = abs_constrain((tar_ang(i) - ang(i) - noise_ang(i)) * 8, 5);
 	tar_ang_acc(i) = abs_constrain((tar_ang_vel(i) - res_ang_vel) * 12, 100);
 %     act(i) = tar_ang_acc(i);
     act(i) = (1.5 * tar_ang_acc(i) - sim_act(i - 1)) * 2;
