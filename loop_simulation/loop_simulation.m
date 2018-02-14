@@ -18,9 +18,9 @@ sim_act = zeros(max_n, 1);
 
 %% Model
 
-act_to_acc_iir_index = 0.06;
-act_to_acc_delay_n = 20;
-act_to_acc_sim_iir_index = 0.045;
+act_to_acc_iir_index = 0.1;
+act_to_acc_delay_n = 30;
+act_to_acc_sim_iir_index = 0.06;
 
 noise_freq = 250;
 noise_ang_vel = sin(t * 2 * pi * noise_freq) * 1;
@@ -41,15 +41,16 @@ ang_m_hist = zeros(0, ang_MN);
 tick_mpc1 = 10000;
 tick_mpc2 = 30000;
 
-ang_N = 20;
-ang_M = 15;
-ang_Q = diag([ones(15, 1) * 0; ones(5, 1)]);
+ang_N1 = 40;
+ang_M1 = 30;
+ang_Q1 = diag([ones(20, 1) * 0; ones(20, 1)]);
+ang_R1 = eye(ang_M1) * 0.1;
+
+ang_N2 = 20;
 ang_M2 = 15;
-ang_Q2 = diag([ones(10, 1) * 0; ones(10, 1)]);
-% ang_Q2 = diag([ones(5, 1) * 0; (1 : 5)' / 5; ones(40, 1)]);
-% ang_R = diag([0.01, ones(1, ang_M - 1)]) * 1;
-ang_R = eye(ang_M) * 0.1;
+ang_Q2 = diag([ones(8, 1) * 0; ones(12, 1)]);
 ang_R2 = eye(ang_M2) * 0.1;
+
 ang_predict = zeros(max_n, 1);
 ang_cmd = zeros(max_n, 1);
 
@@ -86,26 +87,34 @@ for i = ang_step * (ang_MN + 1) + 1 : max_n - ang_MN * ang_step
             ang_m_hist = [ang_m_hist; ang_m'];
         end
         
-        OA = zeros(ang_N);
-        for j = 1 : ang_N
-            OA(j, 1 : j) = ang_m(j : -1 : 1);
-        end;
-		if i < tick_mpc2
-			A = OA(1 : ang_N, 1 : ang_M);
-			xxx = A' * ang_Q;
-			xxx = (xxx * A + ang_R) \ xxx;
-		else
-			A = OA(1 : ang_N, 1 : ang_M2);
-			xxx = A' * ang_Q2;
-			xxx = (xxx * A + ang_R2) \ xxx;
-		end
-        
-        pre_index = (0 : ang_N - 1) * ang_step + i;
+        pre_index = (0 : ang_MN - 1) * ang_step + i;
         ang_predict(pre_index(end)) = ang_predict(pre_index(end - 1));
-        ang_predict(pre_index) = ang_predict(pre_index) + du(1) * ang_m(1 : ang_N);
+        ang_predict(pre_index) = ang_predict(pre_index) + du(1) * ang_m;
         ang_predict(pre_index) = ang_predict(pre_index) + ang(i) - ang_predict(i);
         
-        if i > 27000
+		if i < tick_mpc2
+			OA = zeros(ang_N1);
+			for j = 1 : ang_N1
+				OA(j, 1 : j) = ang_m(j : -1 : 1);
+			end;
+			A = OA(1 : ang_N1, 1 : ang_M1);
+			xxx = A' * ang_Q1;
+			xxx = (xxx * A + ang_R1) \ xxx;
+			ang_N = ang_N1;
+		else
+			OA = zeros(ang_N2);
+			for j = 1 : ang_N2
+				OA(j, 1 : j) = ang_m(j : -1 : 1);
+			end;
+			A = OA(1 : ang_N2, 1 : ang_M2);
+			xxx = A' * ang_Q2;
+			xxx = (xxx * A + ang_R2) \ xxx;
+			ang_N = ang_N2;
+		end
+		
+		pre_index = (0 : ang_N - 1) * ang_step + i;
+        
+        if i > 270000
             du_p = xxx * (tar_ang(pre_index) - ang_predict(pre_index));
         else
             du_p = xxx * (tar_ang(i) * ones(ang_N, 1) - ang_predict(pre_index));
