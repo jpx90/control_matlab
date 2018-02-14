@@ -9,8 +9,9 @@ t = (1 : max_n)' * dt_s;
 
 GRAVITY = 9.81;
 
-settings;
+configuration;
 declare_state;
+set_pid;
 set_target;
 
 sim_act = zeros(max_n, 1);
@@ -18,8 +19,8 @@ sim_act = zeros(max_n, 1);
 %% Model
 
 act_to_acc_iir_index = 0.06;
-act_to_acc_delay_n = 30;
-act_to_acc_sim_iir_index = 0.04;
+act_to_acc_delay_n = 20;
+act_to_acc_sim_iir_index = 0.045;
 
 noise_freq = 250;
 noise_ang_vel = sin(t * 2 * pi * noise_freq) * 1;
@@ -28,22 +29,23 @@ res_ang_vel = 0;
 
 %% Angle Model Identification
 ang_step = 20;
-ang_N = 50;
+ang_MN = 50;
 ang_init_index = 1;
-ang_P = diag([ones(ang_N, 1) * 1e2; 1e0]);
+ang_P = diag([ones(ang_MN, 1) * 1e2; 1e0]);
 ang_lambda = 0.995;
-ang_m = IIR_with_init(ones(ang_N, 1), ang_init_index, 0);
+ang_m = IIR_with_init(ones(ang_MN, 1), ang_init_index, 0);
 ang_b = 0;
-ang_m_hist = zeros(0, ang_N);
+ang_m_hist = zeros(0, ang_MN);
 
 %% MPC
 tick_mpc1 = 10000;
 tick_mpc2 = 30000;
 
-ang_M = 30;
-ang_Q = diag([ones(20, 1) * 0; ones(30, 1)]);
-ang_M2 = 30;
-ang_Q2 = diag([ones(8, 1) * 0; ones(42, 1)]);
+ang_N = 20;
+ang_M = 15;
+ang_Q = diag([ones(15, 1) * 0; ones(5, 1)]);
+ang_M2 = 15;
+ang_Q2 = diag([ones(10, 1) * 0; ones(10, 1)]);
 % ang_Q2 = diag([ones(5, 1) * 0; (1 : 5)' / 5; ones(40, 1)]);
 % ang_R = diag([0.01, ones(1, ang_M - 1)]) * 1;
 ang_R = eye(ang_M) * 0.1;
@@ -53,7 +55,7 @@ ang_cmd = zeros(max_n, 1);
 
 %% Loop
 
-for i = ang_step * (ang_N + 1) + 1 : max_n - ang_N * ang_step
+for i = ang_step * (ang_MN + 1) + 1 : max_n - ang_MN * ang_step
 	ang_acc(i) = act(i - act_to_acc_delay_n) * act_to_acc_iir_index + ang_acc(i - 1) * (1 - act_to_acc_iir_index);
 	ang_vel(i) = ang_vel(i - 1) + ang_acc(i) * dt_s;
 	ang(i) = ang(i - 1) + ang_vel(i) * dt_s;
@@ -63,24 +65,26 @@ for i = ang_step * (ang_N + 1) + 1 : max_n - ang_N * ang_step
     
     res_ang_vel = res_ang_vel * 0.9 + (ang_vel(i) + noise_ang_vel(i)) * 0.1;
 	
-% 	tar_vel(i) = abs_constrain((tar_pos(i) - pos(i)) * 2, 5);
-% 	tar_acc(i) = abs_constrain((tar_vel(i) - vel(i)) * 5, 5);
+% 	tar_vel(i) = abs_constrain((tar_pos(i) - pos(i)) * pos_kp, 5);
+% 	tar_acc(i) = abs_constrain((tar_vel(i) - vel(i)) * vel_kp, 5);
 % 	tar_ang(i) = atan(tar_acc(i) / GRAVITY);
-% 	tar_ang_vel(i) = abs_constrain((tar_ang(i) - ang(i) - noise_ang(i)) * 8, 5);
+% 	tar_ang_vel(i) = abs_constrain((tar_ang(i) - ang(i) - noise_ang(i)) * ang_kp, 5);
 
     if mod(i, ang_step) == 1
-        pas_index = i - (1 : ang_N) * ang_step;
+        pas_index = i - (1 : ang_MN) * ang_step;
         du = ang_cmd(pas_index) - ang_cmd(pas_index - ang_step);
-        [ang_m, ang_b, ang_P] = model_identification_iteration( ...
-            ang(i), ...
-            ang_cmd(i - ang_step * (ang_N + 1)), ...
-            du, ...
-            ang_m, ...
-            ang_b, ...
-            ang_P, ...
-            ang_N, ...
-            ang_lambda);
-        ang_m_hist = [ang_m_hist; ang_m'];
+        if i < 30000
+            [ang_m, ang_b, ang_P] = model_identification_iteration( ...
+                ang(i), ...
+                ang_cmd(i - ang_step * (ang_MN + 1)), ...
+                du, ...
+                ang_m, ...
+                ang_b, ...
+                ang_P, ...
+                ang_MN, ...
+                ang_lambda);
+            ang_m_hist = [ang_m_hist; ang_m'];
+        end
         
         OA = zeros(ang_N);
         for j = 1 : ang_N
@@ -98,10 +102,10 @@ for i = ang_step * (ang_N + 1) + 1 : max_n - ang_N * ang_step
         
         pre_index = (0 : ang_N - 1) * ang_step + i;
         ang_predict(pre_index(end)) = ang_predict(pre_index(end - 1));
-        ang_predict(pre_index) = ang_predict(pre_index) + du(1) * ang_m;
+        ang_predict(pre_index) = ang_predict(pre_index) + du(1) * ang_m(1 : ang_N);
         ang_predict(pre_index) = ang_predict(pre_index) + ang(i) - ang_predict(i);
         
-        if i > 280000
+        if i > 27000
             du_p = xxx * (tar_ang(pre_index) - ang_predict(pre_index));
         else
             du_p = xxx * (tar_ang(i) * ones(ang_N, 1) - ang_predict(pre_index));
@@ -117,7 +121,7 @@ for i = ang_step * (ang_N + 1) + 1 : max_n - ang_N * ang_step
             ang_cmd(i) = tar_ang(i);
         end
         
-        tar_ang_vel(i) = abs_constrain((ang_cmd(i) - ang(i) - noise_ang(i)) * 5, 5);
+        tar_ang_vel(i) = abs_constrain((ang_cmd(i) - ang(i) - noise_ang(i)) * ang_kp, 5);
     else
         if i > tick_mpc1 && set_ang_ctrl_smooth
 			temp = mod(i, ang_step);
@@ -125,7 +129,7 @@ for i = ang_step * (ang_N + 1) + 1 : max_n - ang_N * ang_step
 				temp = ang_step;
 			end
 			ang_cmd(i) = ang_cmd(i - temp) + du_p(1) * temp / ang_step;
-			tar_ang_vel(i) = abs_constrain((ang_cmd(i) - ang(i) - noise_ang(i)) * 5, 5);
+			tar_ang_vel(i) = abs_constrain((ang_cmd(i) - ang(i) - noise_ang(i)) * ang_kp, 5);
 		else
 			ang_cmd(i) = ang_cmd(i - 1);
 			tar_ang_vel(i) = tar_ang_vel(i - 1);
@@ -134,7 +138,7 @@ for i = ang_step * (ang_N + 1) + 1 : max_n - ang_N * ang_step
         ang_predict(pre_index) = ang_predict(pre_index - 1);
     end;
     
-	tar_ang_acc(i) = abs_constrain((tar_ang_vel(i) - res_ang_vel) * 12, 100);
+	tar_ang_acc(i) = abs_constrain((tar_ang_vel(i) - res_ang_vel) * ang_vel_kp, 100);
 %     act(i) = tar_ang_acc(i);
     act(i) = (1.5 * tar_ang_acc(i) - sim_act(i - 1)) * 2;
     sim_act(i) = act(i) * act_to_acc_sim_iir_index + sim_act(i - 1) * (1 - act_to_acc_sim_iir_index);
@@ -157,7 +161,6 @@ tar_ang = tar_ang(1 : max_n);
 tar_ang_vel = tar_ang_vel(1 : max_n);
 tar_ang_acc = tar_ang_acc(1 : max_n);
 
-ang_predict = ang_predict(1 : max_n);
 ang_cmd = ang_cmd(1 : max_n);
 
 ang_predict = ang_predict(1 : max_n);
