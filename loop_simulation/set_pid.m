@@ -1,6 +1,6 @@
 pos_kp = 2;
 vel_kp = 5;
-ang_kp = 1.4;
+ang_kp = 5.6;
 
 pid_pos.kp = 4;
 pid_pos.ki = 0;
@@ -11,7 +11,7 @@ pid_pos.i = 0;
 pid_pos.d = 0;
 pid_pos.last_x = 0;
 
-pid_ang_vel.kp = 3.3;
+pid_ang_vel.kp = 12.3;
 pid_ang_vel.ki = 0;
 pid_ang_vel.kd = 0;
 pid_ang_vel.i_max = 0;

@@ -20,9 +20,9 @@ sim_act = zeros(max_n, 1);
 
 %% Model
 
-act_to_acc_iir_index = 0.01;
-act_to_acc_delay_n = 50;
-act_to_acc_sim_iir_index = 0.009;
+act_to_acc_iir_index = 0.06;
+act_to_acc_delay_n = 30;
+act_to_acc_sim_iir_index = 0.043;
 
 noise_freq = 230;
 ave_n = 87;
@@ -32,7 +32,7 @@ noise_ang = -cos(t * 2 * pi * noise_freq) * 1 / 2 / pi / noise_freq;
 res_ang_vel = 0;
 
 %% Angle Model Identification
-ang_step = 100;
+ang_step = 20;
 ang_MN = 50;
 ang_init_index = 1;
 ang_P = diag([ones(ang_MN, 1) * 1e2; 1e0]);
@@ -42,7 +42,7 @@ ang_b = 0;
 ang_m_hist = zeros(0, ang_MN);
 
 %% Angular Velocity Model Identification
-ang_vel_step = 50;
+ang_vel_step = 10;
 ang_vel_MN = 50;
 ang_vel_init_index = 1;
 ang_vel_P = diag([ones(ang_vel_MN, 1) * 1e2; 1e0]);
@@ -52,8 +52,8 @@ ang_vel_b = 0;
 ang_vel_m_hist = zeros(0, ang_vel_MN);
 
 %% MPC
-tick_mpc1 = 28000;
-tick_mpc2 = 38000;
+tick_mpc1 = 15000;
+tick_mpc2 = 28000;
 
 ang_N1 = 40;
 ang_M1 = 30;
@@ -62,20 +62,20 @@ ang_R1 = eye(ang_M1) * 0.1;
 
 % ang_N2 = 30;
 % ang_M2 = 20;
-% ang_Q2 = diag([ones(8, 1) * 0; ones(22, 1)]);
-% ang_R2 = eye(ang_M2) * 0.1;
+% ang_Q2 = diag([ones(10, 1) * 0; ones(20, 1)]);
+% ang_R2 = eye(ang_M2) * 1;
 
-ang_N2 = 20;
-ang_M2 = 15;
-ang_Q2 = diag([ones(8, 1) * 0; ones(12, 1)]);
-ang_R2 = eye(ang_M2) * 0.1;
+ang_N2 = 25;
+ang_M2 = 20;
+ang_Q2 = diag([ones(9, 1) * 0; ones(16, 1)]);
+ang_R2 = eye(ang_M2) * 1;
 
 ang_predict = zeros(max_n, 1);
 ang_cmd = zeros(max_n, 1);
 
 %% Loop
 
-for i = ang_step * (ang_MN + 2) + 1 : max_n - ang_MN * ang_step
+for i = ang_step * (ang_MN + ceil(ave_n2 / ang_step) + 1) + 1 : max_n - ang_MN * ang_step
 	ang_acc(i) = act(i - act_to_acc_delay_n) * act_to_acc_iir_index + ang_acc(i - 1) * (1 - act_to_acc_iir_index);
 	ang_vel(i) = ang_vel(i - 1) + ang_acc(i) * dt_s;
 	ang(i) = ang(i - 1) + ang_vel(i) * dt_s;
@@ -95,13 +95,14 @@ for i = ang_step * (ang_MN + 2) + 1 : max_n - ang_MN * ang_step
 % 	end
 	
 	if mod(i, ang_step) == 1
-		pas_index = i - (1 : ang_MN) * ang_step - ang_step;
+		temp = ceil(ave_n2 / ang_step);
+		pas_index = i - ((1 : ang_MN) + temp) * ang_step;
 		du = ang_cmd(pas_index) - ang_cmd(pas_index - ang_step);
 		if i < tick_mpc1
-			temp = i - ang_step + (-ave_n2 : ave_n2);
+			temp2 = i - ang_step * temp + (-ave_n2 : ave_n2);
 			[ang_m, ang_b, ang_P] = model_identification_iteration( ...
-				sum(ang(temp) + noise_ang(temp)) / ave_n, ...
-				ang_cmd(i - ang_step * (ang_MN + 2)), ...
+				sum(ang(temp2) + noise_ang(temp2)) / ave_n, ...
+				ang_cmd(i - ang_step * (ang_MN + 1 + temp)), ...
 				du, ang_m, ang_b, ang_P, ang_MN, ang_lambda);
 			ang_m_hist = [ang_m_hist; ang_m'];
 		end
@@ -189,8 +190,8 @@ for i = ang_step * (ang_MN + 2) + 1 : max_n - ang_MN * ang_step
 	
 	[temp, pid_ang_vel] = pid_ctrl(tar_ang_vel(i) - res_ang_vel, pid_ang_vel, dt_s);
 	tar_ang_acc(i) = abs_constrain(temp, 100);
-	act(i) = tar_ang_acc(i);
-% 	act(i) = (1.5 * tar_ang_acc(i) - sim_act(i - 1)) * 2;
+% 	act(i) = tar_ang_acc(i);
+	act(i) = (1.5 * tar_ang_acc(i) - sim_act(i - 1)) * 2;
 	sim_act(i) = act(i) * act_to_acc_sim_iir_index + sim_act(i - 1) * (1 - act_to_acc_sim_iir_index);
 end;
 
