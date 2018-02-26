@@ -5,24 +5,18 @@ clear all
 addpath('../lib');
 addpath('../model_identification');
 
-max_n = 50000;
 dt_s = 0.001;
-t = (1 : max_n)' * dt_s;
 
 GRAVITY = 9.81;
 
+set_target;
 configuration;
 declare_state;
 set_pid;
-set_target;
 
 sim_act = zeros(max_n, 1);
 
 %% Model
-
-act_to_acc_iir_index = 0.06;
-act_to_acc_delay_n = 30;
-act_to_acc_sim_iir_index = 0.043;
 
 noise_freq = 230;
 ave_n = 87;
@@ -52,24 +46,6 @@ ang_vel_b = 0;
 ang_vel_m_hist = zeros(0, ang_vel_MN);
 
 %% MPC
-tick_mpc1 = 15000;
-tick_mpc2 = 28000;
-
-ang_N1 = 40;
-ang_M1 = 30;
-ang_Q1 = diag([ones(20, 1) * 0; ones(20, 1)]);
-ang_R1 = eye(ang_M1) * 0.1;
-
-% ang_N2 = 30;
-% ang_M2 = 20;
-% ang_Q2 = diag([ones(10, 1) * 0; ones(20, 1)]);
-% ang_R2 = eye(ang_M2) * 1;
-
-ang_N2 = 25;
-ang_M2 = 20;
-ang_Q2 = diag([ones(9, 1) * 0; ones(16, 1)]);
-ang_R2 = eye(ang_M2) * 1;
-
 ang_predict = zeros(max_n, 1);
 ang_cmd = zeros(max_n, 1);
 
@@ -90,10 +66,6 @@ for i = ang_step * (ang_MN + ceil(ave_n2 / ang_step) + 1) + 1 : max_n - ang_MN *
 	% 	tar_ang(i) = atan(tar_acc(i) / GRAVITY);
 	% 	tar_ang_vel(i) = abs_constrain((tar_ang(i) - ang(i) - noise_ang(i)) * ang_kp, 5);
 	
-% 	if i == 11000
-% 		tar_ang(30000 : 32000) = -ang(9000 : 11000);
-% 	end
-	
 	if mod(i, ang_step) == 1
 		temp = ceil(ave_n2 / ang_step);
 		pas_index = i - ((1 : ang_MN) + temp) * ang_step;
@@ -105,6 +77,7 @@ for i = ang_step * (ang_MN + ceil(ave_n2 / ang_step) + 1) + 1 : max_n - ang_MN *
 				ang_cmd(i - ang_step * (ang_MN + 1 + temp)), ...
 				du, ang_m, ang_b, ang_P, ang_MN, ang_lambda);
 			ang_m_hist = [ang_m_hist; ang_m'];
+			ang_Q = diag(ang_m(1 : ang_N) .^ 2);
 		end
 		
 		du = ang_cmd(i - ang_step) - ang_cmd(i - ang_step * 2);
@@ -113,29 +86,17 @@ for i = ang_step * (ang_MN + ceil(ave_n2 / ang_step) + 1) + 1 : max_n - ang_MN *
 		ang_predict(pre_index) = ang_predict(pre_index) + du * ang_m;
 		ang_predict(pre_index) = ang_predict(pre_index) + ang(i) - ang_predict(i);
 		
-		if i < tick_mpc2
-			OA = zeros(ang_N1);
-			for j = 1 : ang_N1
-				OA(j, 1 : j) = ang_m(j : -1 : 1);
-			end;
-			A = OA(1 : ang_N1, 1 : ang_M1);
-			xxx = A' * ang_Q1;
-			xxx = (xxx * A + ang_R1) \ xxx;
-			ang_N = ang_N1;
-		else
-			OA = zeros(ang_N2);
-			for j = 1 : ang_N2
-				OA(j, 1 : j) = ang_m(j : -1 : 1);
-			end;
-			A = OA(1 : ang_N2, 1 : ang_M2);
-			xxx = A' * ang_Q2;
-			xxx = (xxx * A + ang_R2) \ xxx;
-			ang_N = ang_N2;
-		end
+		OA = zeros(ang_N);
+		for j = 1 : ang_N
+			OA(j, 1 : j) = ang_m(j : -1 : 1);
+		end;
+		A = OA(1 : ang_N, 1 : ang_M);
+		xxx = A' * ang_Q;
+		xxx = (xxx * A + ang_R) \ xxx;
 		
 		pre_index = (0 : ang_N - 1) * ang_step + i;
 		
-		if i > 280000
+		if i > tick_mpc2
 			du_p = xxx * (tar_ang(pre_index) - ang_predict(pre_index));
 		else
 			du_p = xxx * (tar_ang(i) * ones(ang_N, 1) - ang_predict(pre_index));
@@ -195,7 +156,7 @@ for i = ang_step * (ang_MN + ceil(ave_n2 / ang_step) + 1) + 1 : max_n - ang_MN *
 	sim_act(i) = act(i) * act_to_acc_sim_iir_index + sim_act(i - 1) * (1 - act_to_acc_sim_iir_index);
 end;
 
-max_n = max_n - ang_N * ang_step;
+max_n = max_n - ang_MN * ang_step;
 t = t(1 : max_n);
 pos = pos(1 : max_n);
 vel = vel(1 : max_n);
@@ -219,25 +180,34 @@ ang_cmd = ang_cmd(1 : max_n);
 ang_predict = ang_predict(1 : max_n);
 
 figure(1);
-ax(1) = subplot(3, 2, 1); plot(t, [tar_pos, pos]); grid on; legend('tar pos', 'pos');
-ax(2) = subplot(3, 2, 3); plot(t, [tar_vel, vel]); grid on; legend('tar vel', 'vel');
-ax(3) = subplot(3, 2, 5); plot(t, [tar_acc, acc]); grid on; legend('tar acc', 'acc');
-ax(4) = subplot(3, 2, 2); plot(t, [tar_ang, ang, ang_cmd]); grid on; legend('tar ang', 'ang', 'ang cmd');
-ax(5) = subplot(3, 2, 4); plot(t, [tar_ang_vel, ang_vel]); grid on; legend('tar ang vel', 'ang vel');
-ax(6) = subplot(3, 2, 6); plot(t, [tar_ang_acc, ang_acc]); grid on; legend('tar ang acc', 'ang acc');
+clear ax
+% ax(1) = subplot(3, 2, 1); plot(t, [tar_pos, pos]); grid on; legend('tar pos', 'pos');
+% ax(2) = subplot(3, 2, 3); plot(t, [tar_vel, vel]); grid on; legend('tar vel', 'vel');
+% ax(3) = subplot(3, 2, 5); plot(t, [tar_acc, acc]); grid on; legend('tar acc', 'acc');
+ax(1) = subplot(3, 1, 1);
+plot(t, [tar_ang, ang, ang_cmd]);
+grid on;
+ylabel('\theta / rad');
+legend('tar ang', 'ang', 'ang cmd');
+title(['0 - ', num2str(t(tick_mpc1)), ' s : PID    ', ...
+	num2str(t(tick_mpc1)), ' - ', num2str(t(tick_mpc2)), ' s : DMC ¸úËæ    ', ...
+	num2str(t(tick_mpc2)), ' s - end : DMC Ô¤²â']);
+
+ax(2) = subplot(3, 1, 2);
+plot(t, [tar_ang_vel, ang_vel]);
+grid on;
+ylabel('$\dot \theta$ / rad $\cdot$ s$^{-1}$', 'Interpreter', 'latex');
+legend('tar ang vel', 'ang vel');
+
+ax(3) = subplot(3, 1, 3);
+plot(t, [tar_ang_acc, ang_acc]);
+grid on;
+xlabel('time / s');
+ylabel('$\ddot \theta$ / rad $\cdot$ s$^{-2}$', 'Interpreter', 'latex');
+legend('tar ang acc', 'ang acc');
 
 linkaxes(ax, 'x');
-xlim([29, 37]);
 
 figure(2);
-% step = ang_step / 2;
-% [m, ~] = model_identification(ang_vel(1 : step : tick_mpc2), tar_ang_vel(1 : step : tick_mpc2), 100, 1);
-% subplot(1, 2, 1); mesh(ang_m_hist); grid on;
 subplot(1, 2, 1); plot(ang_vel_m); grid on; title('ang vel');
 subplot(1, 2, 2); plot(ang_m); grid on; title('ang');
-
-% figure(3);
-% clear ax;
-% subplot(1, 2, 1); mesh(m); grid on;
-
-% end
